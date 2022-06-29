@@ -1,82 +1,80 @@
 #include <ESP8266WiFi.h>
-#include "Adafruit_MQTT.h"
-#include "Adafruit_MQTT_Client.h"
+#include <PubSubClient.h>
+#define MSG_BUFFER_SIZE  (50)
+#define gas A0                    
 
-/************************* Menentukan wifi *********************************/
-#define WLAN_SSID       "Warnet Putri"        // masukkan nama wifi
-#define WLAN_PASS       "poiuytrewq"          // masukkan password
+const char* ssid = "Warnet Putri";
+const char* password = "poiuytrewq";
+const char* mqtt_server = "192.168.100.117";
+int durasi,jarak;  
 
-/************************* Mengatur adafruit.io *********************************/
-#define MQTT_SERVER      "192.168.100.117"    // ip address raspberrypi
-#define MQTT_SERVERPORT  1883                 // port raspberrypi
-#define MQTT_USERNAME    ""                   // dikosongkan
-#define MQTT_KEY         ""                   // dikosongkan
+WiFiClient espClient;
+PubSubClient client(espClient);
 
-/************************* Definisi pin sensor *********************************/
-#define gas A0                             // pin ldr
-short data,threshold=400;
+char msg[MSG_BUFFER_SIZE];
 
-/************************* Deklarasi wifi server *********************************/
-WiFiClient client;
-//WiFiClientSecure client;                    // untuk koneksi lebih aman
-
-/************************* Mengatur mqtt client *********************************/
-Adafruit_MQTT_Client mqtt(&client, MQTT_SERVER, MQTT_SERVERPORT, MQTT_USERNAME, MQTT_KEY);
-
-/************************* Publish data *********************************/
-Adafruit_MQTT_Publish gas_stream = Adafruit_MQTT_Publish(&mqtt, MQTT_USERNAME "sensor_gas","hello");
-
-/*************************** Program ************************************/
-void setup() {
-  Serial.begin(115200);
+void setup_wifi() {
   delay(10);
-  
-  /*************************** Menentukan mode pin ************************************/
-  pinMode(gas,INPUT);
-  
-  /*************************** Menghubungkan ke wifi ************************************/
-  WiFi.begin(WLAN_SSID, WLAN_PASS);
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
-    Serial.print(".");
   }
-  Serial.println(" WiFi connected");
-  Serial.print("IP Address : "); 
+
+  randomSeed(micros());
+
+  Serial.println("");
+  Serial.println("WiFi connected");
+  Serial.print("IP address: ");
   Serial.println(WiFi.localIP());
 }
 
-void loop() {
-  MQTT_connect();
-
-  short data=analogRead(gas);
-
-  Serial.print("sensor_gas ");
-  Serial.println(data);
-
-  /*************************** Mengirim data ke mqtt ************************************/
-  gas_stream.publish(data);
-  delay(1000);
+void callback(char* topic, byte* payload, unsigned int length){
+  for (int i = 0; i < length; i++) {
+  }
 }
 
-void MQTT_connect(){
-  int8_t ret;
-
-  if (mqtt.connected()) {
-    return;
-  }
-
-  Serial.print("Connecting to MQTT... ");
-
-  uint8_t retries=3;
-  while ((ret=mqtt.connect())!=0){
-       Serial.println(mqtt.connectErrorString(ret));
-       Serial.println("Retrying MQTT connection in 5 seconds...");
-       mqtt.disconnect();
-       delay(5000);
-       retries--;
-       if (retries==0) {
-         while (1);
-       }
+void reconnect() {
+  while (!client.connected()) {
+    String clientId = "ESP8266Client-";
+    clientId += String(random(0xffff), HEX);
+    
+    if (client.connect(clientId.c_str())) {
+    } else {
+      delay(5000);
     }
-  Serial.println("MQTT Connected!");
+  }
+}
+
+void setup() {
+  setup_wifi();
+  Serial.begin(115200);
+  
+  pinMode(gas,INPUT);
+ 
+  client.setServer(mqtt_server, 1883);
+  client.setCallback(callback);
+}
+
+void loop() {
+  if (!client.connected()) {
+    reconnect();
+  }
+  
+  client.loop();
+
+  short data=analogRead(gas);
+  map(data,0,1024,0,100);
+  
+  short persen=data*0.1-2;
+
+  Serial.print("Persentasi Gas : ");
+  Serial.print(data);
+  Serial.println(" %");
+  
+  snprintf (msg, MSG_BUFFER_SIZE, "Persentase Gas : %ld %%",persen);
+  
+  client.publish("sensor_gas", msg);
+  delay(1000);
 }
